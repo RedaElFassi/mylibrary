@@ -50,15 +50,13 @@ print(df)
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
 
-import dash
 from dash import dcc, html, Input, Output
 import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
 import plotly.express as px
 
-# Charger les données dans un DataFrame (vous avez déjà df, donc on l'utilise directement)
-# df = ... (votre dataframe ici)
+
 
 import dash
 from dash import dcc, html, Input, Output
@@ -68,6 +66,10 @@ import numpy as np
 import plotly.express as px
 import yfinance as yf
 
+#Here df that we will use is the last dataframe obtained above from the loop
+#where we looped on the block of the blockchains
+
+#function that compute the pnl of the folder and stocks
 def compute_pnl(df):
     df['Average_Buy_Price'] = df.groupby('Ticker', group_keys=False)['Price'].transform(
         lambda x: x.expanding().mean()
@@ -82,7 +84,7 @@ def compute_pnl(df):
     stock_pnl = df.groupby(['Date', 'Ticker'])['Cumulative_PnL'].sum().reset_index()
     return overall_pnl, stock_pnl
 
-
+#function that compute the returns for the portfolio and stocks
 def compute_returns(df):
     df['Average_Buy_Price'] = df.groupby('Ticker', group_keys=False)['Price'].transform(
         lambda x: x.expanding().mean()
@@ -100,7 +102,7 @@ def compute_returns(df):
 
     return portfolio_returns, stock_returns, portfolio_sharpe, stock_sharpes
 
-
+#function that compute the sharp-ratio using Risk-free IR equal to 1%
 def sharpe_ratio(returns, risk_free_rate=0.01):
     excess_returns = returns - risk_free_rate / 252
     mean_excess_return = excess_returns.mean()
@@ -159,15 +161,11 @@ def fetch_and_compute_indicators(tickers):
             # Add Ticker column for identification
             data['Ticker'] = ticker
 
-            # Option 1: Drop rows with NaN values (useful if analysis doesn't require them)
+            #  Drop rows with NaN values (useful if analysis doesn't require them)
             data.dropna(inplace=True)
+    
 
-            # OR Option 2: Fill NaN values with appropriate values (e.g., forward fill or 0)
-            # Uncomment one of the following lines if you'd rather fill NaNs:
-            # data.fillna(method='ffill', inplace=True)  # Forward-fill NaN values
-            # data.fillna(0, inplace=True)  # Replace NaNs with 0
-
-            # Drop temporary columns used for computation (if not needed)
+            # Drop temporary columns used for computation 
             data.drop(columns=['BB_Std'], inplace=True)
 
             # Append processed data to the list
@@ -188,7 +186,7 @@ def fetch_and_compute_indicators(tickers):
 
 
 
-print(fetch_and_compute_indicators('AAPL'))
+#print(fetch_and_compute_indicators('AAPL')) here it was just to test the function
 
 # Initialize Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -308,7 +306,7 @@ def update_sharpe_ratios(selected_stocks):
     return table_header + [html.Tbody(table_body)]
 
 
-# Callback pour mettre à jour les graphiques dynamiques
+# Callback in order to update dynamicly the graph
 @app.callback(
     Output('dynamic-indicator-graphs', 'children'),
     Input('stock-selector', 'value')  # La valeur sélectionnée dans la liste déroulante
@@ -325,7 +323,7 @@ def update_dynamic_graphs(selected_stocks):
             graphs.append(html.Div(f"No data available for {ticker}.", style={'textAlign': 'center', 'padding': '10px'}))
             continue
 
-        # Crée un graphique pour chaque action
+        # create a graph for each stock
         fig = px.line(stock_data, x='Date', y='Close', title=f"{ticker} - Statistical Indicators")
         fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_15'], mode='lines', name='MA 15')
         fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_30'], mode='lines', name='MA 30')
@@ -349,7 +347,7 @@ def update_dynamic_graphs(selected_stocks):
                     figure=fig,
                     config={'displayModeBar': False}
                 )
-            ], width=6)  # Chaque graphique occupe la moitié de la ligne
+            ], width=6)  # each graph will occup half the line
         )
 
     return graphs
