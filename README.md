@@ -1,11 +1,11 @@
-# mylibrary
+# myprojectpythonReda
 
 package for the python project 2025 class
 
 ## Installation
 
 ```bash
-$ pip install mylibrary
+$ pip install myprojectpythonReda
 ```
 
 ## Usage
@@ -22,8 +22,8 @@ Interested in contributing? Check out the contributing guidelines. Please note t
 
 ## License
 
-`mylibrary` was created by Reda El Fassi. It is licensed under the terms of the MIT license.
+`myprojectpythonReda` was created by Reda El Fassi. It is licensed under the terms of the MIT license.
 
 ## Credits
 
-`mylibrary` was created with [`cookiecutter`](https://cookiecutter.readthedocs.io/en/latest/) and the `py-pkgs-cookiecutter` [template](https://github.com/py-pkgs/py-pkgs-cookiecutter).
+`myprojectpythonReda` was created with [`cookiecutter`](https://cookiecutter.readthedocs.io/en/latest/) and the `py-pkgs-cookiecutter` [template](https://github.com/py-pkgs/py-pkgs-cookiecutter).
