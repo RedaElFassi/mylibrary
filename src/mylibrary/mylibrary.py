@@ -15,6 +15,19 @@ from io import StringIO
 import os
 import threading
 
+# List of S&P 500 tickers (manually retrieved)
+SP500_TICKERS = [
+    "AAPL", "MSFT", "AMZN", "GOOGL", "META", "BRK-B", "JNJ", "V", "PG", "NVDA", "TSLA",
+    "JPM", "UNH", "HD", "DIS", "PYPL", "MA", "NFLX", "KO", "PFE", "ABT", "CSCO", "XOM",
+    "PEP", "CMCSA", "ADBE", "T", "MRK", "INTC", "CRM", "WMT", "NKE", "VZ", "TMO", "MDT",
+    "COST", "AMGN", "LLY", "QCOM", "DHR", "ACN", "HON", "MCD", "BMY", "AVGO", "TXN", "UNP",
+    "NEE", "PM", "LOW", "MS", "LIN", "INTU", "RTX", "SCHW", "IBM", "NOW", "CAT", "SPGI",
+    "GS", "BLK", "BKNG", "DE", "EL", "CVX", "LMT", "AXP", "MDLZ", "ISRG", "ZTS", "GE",
+    "ADP", "GILD", "ADI", "TGT", "CB", "MMC", "SYK", "CME", "PLD", "TMUS", "CCI", "WM",
+    "NSC", "ETN", "ICE", "EW", "ITW", "AMT", "MU", "CL", "AON", "VRTX", "SO", "BSX",
+    "NOC", "ATVI", "REGN", "FISV", "SHW", "D", "F", "MRNA", "ORCL", "PGR", "HUM", "COP",
+    "KMB", "DG", "FTNT", "BK", "CMI", "ALL", "STZ", "AEP", "KHC", "SPG", "GM", "LRCX",
+    "LHX", "ROST", "EA", "PAYX", "APH", "TT", "WELL", "VLO", "VRSK", "CTAS", "MNST"]
 
 #Here df that we will use is the last dataframe obtained above from the loop
 #where we looped on the block of the blockchains
@@ -125,6 +138,52 @@ def fetch_and_compute_indicators(tickers):
         # Return an empty DataFrame if no data was processed
         return pd.DataFrame()
 
+def fetch_and_compute_returns(tickers):
+    """
+    Fetch historical data and compute daily returns for a list of tickers.
+    Returns a DataFrame indexed by date, with columns as tickers and values as returns.
+    """
+    # Define the date range
+    today = datetime.today()
+    end_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')  # Yesterday's date
+    start_date = (today - timedelta(days=365)).strftime('%Y-%m-%d')  # 1 year ago from today
+
+    # Initialize a list to store processed DataFrames
+    processed_data = []
+
+    for ticker in tickers:
+        try:
+            # Fetch historical data
+            stock = yf.Ticker(ticker)
+            data = stock.history(start=start_date, end=end_date, auto_adjust=False, actions=False)
+
+            # If data is empty, log and skip
+            if data.empty:
+                print(f"No data available for {ticker}")
+                continue
+
+            # Compute daily returns
+            data['Return'] = data['Close'].pct_change()
+
+            # Select only the returns and reset index
+            returns_data = data[['Return']].reset_index()
+            returns_data.rename(columns={'Return': ticker}, inplace=True)
+
+            # Append to the processed data list
+            processed_data.append(returns_data.set_index('Date')[ticker])
+
+        except Exception as e:
+            print(f"Error processing {ticker}: {e}")
+
+    # Combine all returns into a single DataFrame
+    if processed_data:
+        combined_returns = pd.concat(processed_data, axis=1)
+        combined_returns.dropna(how='all', inplace=True)  # Drop rows where all tickers are NaN
+        return combined_returns
+    else:
+        return pd.DataFrame()
+
+
 def compute_correlation_matrix(df):
     """
     Compute the correlation matrix for selected stocks.
@@ -141,7 +200,7 @@ def run_app(df):
     app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
     # Layout
-    app.layout =  dbc.Container([
+    app.layout = dbc.Container([
         dbc.Row([
             dbc.Col(
                 html.H1(
@@ -179,13 +238,24 @@ def run_app(df):
 
         html.Hr(),  # Separator
         html.H3("Statistical Indicators on Past Year Data", className="text-center mt-4 mb-4"),
-        dbc.Row(id='dynamic-indicator-graphs', className="gy-4"),
+        dbc.Row([
+            dbc.Col([
+                dcc.Dropdown(
+                    id='sp500-stock-selector',
+                    options=[{'label': ticker, 'value': ticker} for ticker in SP500_TICKERS],
+                    multi=True,
+                    value=df['Ticker'].unique(),
+                    placeholder="Select S&P 500 stocks (max 10)",
+                    maxHeight=300  # Limit the dropdown height for better UX
+                )
+            ], width=12)
+        ], className="mb-3"),
+        dbc.Row(id='sp500-dynamic-indicator-graphs', className="gy-4"),
 
         html.Hr(),  # Separator
         html.H3("Correlation Heatmap", className="text-center mt-4 mb-4"),
         dbc.Row([dbc.Col(dcc.Graph(id='correlation-heatmap'), width=12)])
     ], fluid=True)
-
 
     # Callbacks
     @app.callback(
@@ -204,7 +274,6 @@ def run_app(df):
         )
         return fig
 
-
     @app.callback(
         Output('stock-pnl-chart', 'figure'),
         Input('stock-selector', 'value')
@@ -221,7 +290,6 @@ def run_app(df):
             labels={'Cumulative_PnL': 'PnL', 'Ticker': 'Stock'}
         )
         return fig
-
 
     @app.callback(
         Output('returns-chart', 'figure'),
@@ -240,7 +308,6 @@ def run_app(df):
         )
         return fig
 
-
     @app.callback(
         Output('sharpe-ratio-table', 'children'),
         Input('stock-selector', 'value')
@@ -258,75 +325,87 @@ def run_app(df):
             table_body.append(html.Tr([html.Td(row['Ticker']), html.Td(f"{row['Sharpe_Ratio']:.2f}")]))
         return table_header + [html.Tbody(table_body)]
 
-
-    # Callback in order to update dynamicly the graph
+    # Callback to update S&P 500 technical indicators graphs
     @app.callback(
-        Output('dynamic-indicator-graphs', 'children'),
-        Input('stock-selector', 'value')  # La valeur sélectionnée dans la liste déroulante
+        Output('sp500-dynamic-indicator-graphs', 'children'),
+        Input('sp500-stock-selector', 'value')
     )
-    def update_dynamic_graphs(selected_stocks):
+    def update_sp500_dynamic_graphs(selected_stocks):
         if not selected_stocks:
             return [html.Div("No stocks selected.", style={'textAlign': 'center', 'padding': '20px'})]
+        
+        if len(selected_stocks) > 10:
+            return [html.Div("Please select a maximum of 10 stocks.", style={'textAlign': 'center', 'padding': '20px'})]
 
         graphs = []
+        stock_data = fetch_and_compute_indicators(selected_stocks)
         for ticker in selected_stocks:
-            stock_data = fetch_and_compute_indicators([ticker])
-
-            if stock_data.empty:
-                graphs.append(html.Div(f"No data available for {ticker}.", style={'textAlign': 'center', 'padding': '10px'}))
-                continue
-
-            # create a graph for each stock
-            fig = px.line(stock_data, x='Date', y='Close', title=f"{ticker} - Statistical Indicators")
-            fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_15'], mode='lines', name='MA 15')
-            fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_30'], mode='lines', name='MA 30')
-            fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_45'], mode='lines', name='MA 45')
+            ticker_data = stock_data[stock_data['Ticker'] == ticker]
+            fig = px.line(ticker_data, x='Date', y='Close', title=f"{ticker} - Technical Indicators")
+            fig.add_scatter(x=ticker_data['Date'], y=ticker_data['MA_15'], mode='lines', name='MA 15')
+            fig.add_scatter(x=ticker_data['Date'], y=ticker_data['MA_30'], mode='lines', name='MA 30')
+            fig.add_scatter(x=ticker_data['Date'], y=ticker_data['MA_45'], mode='lines', name='MA 45')
+            fig.add_scatter(x=ticker_data['Date'], y=ticker_data['BB_Upper'], mode='lines', name='Upper Band')
             fig.add_scatter(
-                x=stock_data['Date'], y=stock_data['BB_Upper'],
-                mode='lines', line=dict(width=0), name='Upper Band',
-                showlegend=False
+                x=ticker_data['Date'], y=ticker_data['BB_Lower'], mode='lines', fill='tonexty',
+                fillcolor='rgba(173,216,230,0.3)', name='Lower Band'
             )
-            fig.add_scatter(
-                x=stock_data['Date'], y=stock_data['BB_Lower'],
-                mode='lines', line=dict(width=0), name='Lower Band',
-                fill='tonexty', fillcolor='rgba(173,216,230,0.3)',  # Couleur bleu clair
-                showlegend=False
-            )
-
-            graphs.append(
-                dbc.Col([
-                    dcc.Graph(
-                        id=f"{ticker}-indicator-chart",
-                        figure=fig,
-                        config={'displayModeBar': False}
-                    )
-                ], width=6)  # each graph will occup half the line
-            )
-
+            graphs.append(dbc.Col(dcc.Graph(figure=fig), width=6))
+        
         return graphs
 
     @app.callback(
     Output('correlation-heatmap', 'figure'),
-    Input('stock-selector', 'value')
+    Input('sp500-stock-selector', 'value')
     )
     def update_correlation_heatmap(selected_stocks):
-        filtered_df = df[df['Ticker'].isin(selected_stocks)]
-        correlation_matrix = compute_correlation_matrix(filtered_df)
+        if not selected_stocks:
+            return px.imshow(
+                [[0]], 
+                title="No Data Available", 
+                labels={'color': 'Correlation'}
+            )
+
+        # Fetch the returns for the selected stocks
+        returns_data = fetch_and_compute_returns(selected_stocks)
+
+        # If no returns data is available, return an empty heatmap
+        if returns_data.empty:
+            return px.imshow(
+                [[0]], 
+                title="No Data Available", 
+                labels={'color': 'Correlation'}
+            )
+
+        # Compute the correlation matrix
+        correlation_matrix = returns_data.corr()
+
+        # Create the heatmap
         fig = px.imshow(
-            correlation_matrix,
-            title="Correlation Heatmap",
-            color_continuous_scale=["darkblue", "skyblue"],
-            labels={'color': 'Correlation'},
-            x=correlation_matrix.columns,
-            y=correlation_matrix.columns
+        correlation_matrix,
+        title="Correlation Heatmap of Returns",
+        color_continuous_scale=px.colors.sequential.Blues,  # Use a vivid blue scale
+        labels={'color': 'Correlation'},
+        x=correlation_matrix.columns,
+        y=correlation_matrix.columns
         )
         fig.update_layout(
-            height=500,  # Adjust height for better display
+            height=500,
             xaxis_title="Ticker",
             yaxis_title="Ticker",
-            margin=dict(l=40, r=40, t=40, b=40)  # Add padding
+            margin=dict(l=40, r=40, t=40, b=40),
+            coloraxis_colorbar=dict(
+                title="Correlation",
+                tickvals=[0.2, 0.4, 0.6, 0.8, 1.0],  # Define tick marks for better scale readability
+            )
         )
+        fig.update_traces(
+            zmin=0,  # Set minimum correlation value
+            zmax=1   # Set maximum correlation value
+        )
+
         return fig
+
 
     # Function to open the browser
     def open_browser():
@@ -336,6 +415,7 @@ def run_app(df):
     if __name__ == "__main__":
         Timer(1, open_browser).start()  # Open the browser after a 1-second delay
         app.run_server(debug=False, port=8050)
+
 
     
 
