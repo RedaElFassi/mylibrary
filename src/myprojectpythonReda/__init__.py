@@ -1,3 +1,3 @@
 # read version from installed package
 from importlib.metadata import version
-__version__ = version("myprojectpython")
+__version__ = version("myprojectpythonReda")

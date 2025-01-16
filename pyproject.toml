@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "myprojectpython"
+name = "myprojectpythonReda"
 version = "0.0.0"
 description = "package for the python project 2025 class"
 authors = ["Reda El Fassi"]
