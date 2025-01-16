@@ -1,4 +1,4 @@
-from mylibrary import compute_pnl, compute_returns
+from myprojectpythonreda import compute_pnl, compute_returns
 
 
 
