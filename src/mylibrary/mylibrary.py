@@ -1,70 +1,25 @@
 from pybacktestchain.data_module import FirstTwoMoments
 from pybacktestchain.broker import Backtest, StopLoss
 from pybacktestchain.blockchain import load_blockchain
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
-from io import StringIO
-
-# Set verbosity for logging
-verbose = False  # Set to True to enable logging, or False to suppress it
-
-backtest = Backtest(
-    initial_date=datetime(2019, 1, 1),
-    final_date=datetime(2020, 1, 1),
-    information_class=FirstTwoMoments,
-    risk_model=StopLoss,
-    name_blockchain='backtest',
-    verbose=verbose
-)
-
-backtest.run_backtest()
-
-block_chain = load_blockchain('backtest')
-print(str(block_chain))
-# check if the blockchain is valid
-print(block_chain.is_valid())
-
-
-
-
-for block in block_chain.chain:
-    if block.name_backtest == "Genesis Block":  # Ignorer le bloc Genesis
-        continue
-    
-    print(f"Processing block: {block.name_backtest}")
-    
-    try:
-        # Convertir les données en DataFrame
-        df = pd.read_csv(StringIO(block.data), delim_whitespace=True)
-        print("Data as DataFrame:")
-        print(df.head())
-    except Exception as e:
-        print(f"Error converting block data to DataFrame: {e}")
-    print("-" * 80)
-
-print(df)
-
-
-
-
+import numpy as np
+import webbrowser
+from threading import Timer
+import dash
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
-
-from dash import dcc, html, Input, Output
 import dash_bootstrap_components as dbc
-import pandas as pd
-import numpy as np
-import plotly.express as px
-
-
-
-import dash
-from dash import dcc, html, Input, Output
-import dash_bootstrap_components as dbc
-import pandas as pd
-import numpy as np
-import plotly.express as px
 import yfinance as yf
+from io import StringIO
+import os
+import threading
+
+
+
+
+
+
 
 #Here df that we will use is the last dataframe obtained above from the loop
 #where we looped on the block of the blockchains
@@ -112,13 +67,6 @@ def sharpe_ratio(returns, risk_free_rate=0.01):
     return mean_excess_return / std_excess_return
 
 
-from datetime import datetime, timedelta
-import yfinance as yf
-import pandas as pd
-
-from datetime import datetime, timedelta
-import yfinance as yf
-import pandas as pd
 
 def fetch_and_compute_indicators(tickers):
     """
@@ -182,187 +130,257 @@ def fetch_and_compute_indicators(tickers):
         # Return an empty DataFrame if no data was processed
         return pd.DataFrame()
 
+def compute_correlation_matrix(df):
+    """
+    Compute the correlation matrix for selected stocks.
+    """
+    pivot_df = df.pivot(index='Date', columns='Ticker', values='Price')  # Pivot to have Tickers as columns
+    pivot_df = pivot_df.fillna(0)  # Drop columns with any NaN values
+    correlation_matrix = pivot_df.corr()  # Compute correlations
+    return correlation_matrix
 
 
+# Dash app encapsulated in a function
+def run_app(df):
+    # Initialize Dash app
+    app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-
-#print(fetch_and_compute_indicators('AAPL')) here it was just to test the function
-
-# Initialize Dash app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-
-# Layout
-app.layout = dbc.Container([
-    dbc.Row([
-        dbc.Col([
-            dcc.Dropdown(
-                id='stock-selector',
-                options=[{'label': ticker, 'value': ticker} for ticker in df['Ticker'].unique()],
-                value=df['Ticker'].unique(),
-                multi=True,
-                placeholder="Select stocks to display"
-            )
-        ], width=12)
-    ], className="mb-3"),
-
-    dbc.Row([
-        dbc.Col([
-            dcc.Graph(id='overall-pnl-chart', config={'displayModeBar': False})
-        ], width=6),
-        dbc.Col([
-            dcc.Graph(id='stock-pnl-chart', config={'displayModeBar': False})
-        ], width=6),
-    ], className="mb-4"),
-
-    dbc.Row([
-        dbc.Col([
-            dcc.Graph(id='returns-chart', config={'displayModeBar': False})
-        ], width=12),
-    ]),
-
-    dbc.Row([
-        dbc.Col([
-            html.H5("Sharpe Ratios", className="text-center"),
-            html.Table(id='sharpe-ratio-table', className="table table-striped table-bordered")
-        ], width=12)
-    ], className="mb-4"),
-
-    html.Hr(),  # Line to distinguish sections
-    html.H3("Statistical Indicators on Past Year Data", className="text-center mt-4 mb-4"),
-
-    dbc.Row(id='dynamic-indicator-graphs', className="gy-4")  # Classe pour espacement vertical
-], fluid=True)
-
-
-# Callbacks
-@app.callback(
-    Output('overall-pnl-chart', 'figure'),
-    Input('stock-selector', 'value')
-)
-def update_pnl_chart(selected_stocks):
-    filtered_df = df[df['Ticker'].isin(selected_stocks)]
-    overall_pnl, _ = compute_pnl(filtered_df)
-    fig = px.line(
-        overall_pnl,
-        x='Date',
-        y='Overall_PnL',
-        title="Overall Portfolio PnL Over Time",
-        labels={'Overall_PnL': 'PnL', 'Date': 'Date'}
-    )
-    return fig
-
-
-@app.callback(
-    Output('stock-pnl-chart', 'figure'),
-    Input('stock-selector', 'value')
-)
-def update_stock_pnl_chart(selected_stocks):
-    filtered_df = df[df['Ticker'].isin(selected_stocks)]
-    _, stock_pnl = compute_pnl(filtered_df)
-    fig = px.line(
-        stock_pnl,
-        x='Date',
-        y='Cumulative_PnL',
-        color='Ticker',
-        title="Stock PnL Over Time",
-        labels={'Cumulative_PnL': 'PnL', 'Ticker': 'Stock'}
-    )
-    return fig
-
-
-@app.callback(
-    Output('returns-chart', 'figure'),
-    Input('stock-selector', 'value')
-)
-def update_returns_chart(selected_stocks):
-    filtered_df = df[df['Ticker'].isin(selected_stocks)]
-    _, stock_returns, _, _ = compute_returns(filtered_df)
-    fig = px.line(
-        stock_returns,
-        x='Date',
-        y='Daily_Return',
-        color='Ticker',
-        title="Daily Returns by Stock",
-        labels={'Daily_Return': 'Daily Return', 'Date': 'Date'}
-    )
-    return fig
-
-
-@app.callback(
-    Output('sharpe-ratio-table', 'children'),
-    Input('stock-selector', 'value')
-)
-def update_sharpe_ratios(selected_stocks):
-    filtered_df = df[df['Ticker'].isin(selected_stocks)]
-    _, _, portfolio_sharpe, stock_sharpes = compute_returns(filtered_df)
-    table_header = [
-        html.Thead(html.Tr([html.Th("Ticker"), html.Th("Sharpe Ratio")]))
-    ]
-    table_body = [
-        html.Tr([html.Td("Portfolio"), html.Td(f"{portfolio_sharpe:.2f}")])
-    ]
-    for _, row in stock_sharpes.iterrows():
-        table_body.append(html.Tr([html.Td(row['Ticker']), html.Td(f"{row['Sharpe_Ratio']:.2f}")]))
-    return table_header + [html.Tbody(table_body)]
-
-
-# Callback in order to update dynamicly the graph
-@app.callback(
-    Output('dynamic-indicator-graphs', 'children'),
-    Input('stock-selector', 'value')  # La valeur sélectionnée dans la liste déroulante
-)
-def update_dynamic_graphs(selected_stocks):
-    if not selected_stocks:
-        return [html.Div("No stocks selected.", style={'textAlign': 'center', 'padding': '20px'})]
-
-    graphs = []
-    for ticker in selected_stocks:
-        stock_data = fetch_and_compute_indicators([ticker])
-
-        if stock_data.empty:
-            graphs.append(html.Div(f"No data available for {ticker}.", style={'textAlign': 'center', 'padding': '10px'}))
-            continue
-
-        # create a graph for each stock
-        fig = px.line(stock_data, x='Date', y='Close', title=f"{ticker} - Statistical Indicators")
-        fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_15'], mode='lines', name='MA 15')
-        fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_30'], mode='lines', name='MA 30')
-        fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_45'], mode='lines', name='MA 45')
-        fig.add_scatter(
-            x=stock_data['Date'], y=stock_data['BB_Upper'],
-            mode='lines', line=dict(width=0), name='Upper Band',
-            showlegend=False
-        )
-        fig.add_scatter(
-            x=stock_data['Date'], y=stock_data['BB_Lower'],
-            mode='lines', line=dict(width=0), name='Lower Band',
-            fill='tonexty', fillcolor='rgba(173,216,230,0.3)',  # Couleur bleu clair
-            showlegend=False
-        )
-
-        graphs.append(
+    # Layout
+    app.layout = dbc.Container([
+        dbc.Row([
             dbc.Col([
-                dcc.Graph(
-                    id=f"{ticker}-indicator-chart",
-                    figure=fig,
-                    config={'displayModeBar': False}
+                dcc.Dropdown(
+                    id='stock-selector',
+                    options=[{'label': ticker, 'value': ticker} for ticker in df['Ticker'].unique()],
+                    value=df['Ticker'].unique(),
+                    multi=True,
+                    placeholder="Select stocks to display"
                 )
-            ], width=6)  # each graph will occup half the line
+            ], width=12)
+        ], className="mb-3"),
+
+        dbc.Row([
+            dbc.Col(dcc.Graph(id='overall-pnl-chart'), width=6),
+            dbc.Col(dcc.Graph(id='stock-pnl-chart'), width=6),
+        ]),
+
+        dbc.Row([dbc.Col(dcc.Graph(id='returns-chart'), width=12)]),
+
+        dbc.Row([
+            dbc.Col([
+                html.H5("Sharpe Ratios", className="text-center"),
+                html.Table(id='sharpe-ratio-table', className="table table-striped table-bordered")
+            ], width=12)
+        ], className="mb-4"),
+
+        html.Hr(),  # Separator
+        html.H3("Statistical Indicators on Past Year Data", className="text-center mt-4 mb-4"),
+        dbc.Row(id='dynamic-indicator-graphs', className="gy-4"),
+
+        html.Hr(),  # Separator
+        html.H3("Correlation Heatmap", className="text-center mt-4 mb-4"),
+        dbc.Row([dbc.Col(dcc.Graph(id='correlation-heatmap'), width=12)])
+    ], fluid=True)
+
+
+    # Callbacks
+    @app.callback(
+        Output('overall-pnl-chart', 'figure'),
+        Input('stock-selector', 'value')
+    )
+    def update_pnl_chart(selected_stocks):
+        filtered_df = df[df['Ticker'].isin(selected_stocks)]
+        overall_pnl, _ = compute_pnl(filtered_df)
+        fig = px.line(
+            overall_pnl,
+            x='Date',
+            y='Overall_PnL',
+            title="Overall Portfolio PnL Over Time",
+            labels={'Overall_PnL': 'PnL', 'Date': 'Date'}
         )
-
-    return graphs
-
+        return fig
 
 
+    @app.callback(
+        Output('stock-pnl-chart', 'figure'),
+        Input('stock-selector', 'value')
+    )
+    def update_stock_pnl_chart(selected_stocks):
+        filtered_df = df[df['Ticker'].isin(selected_stocks)]
+        _, stock_pnl = compute_pnl(filtered_df)
+        fig = px.line(
+            stock_pnl,
+            x='Date',
+            y='Cumulative_PnL',
+            color='Ticker',
+            title="Stock PnL Over Time",
+            labels={'Cumulative_PnL': 'PnL', 'Ticker': 'Stock'}
+        )
+        return fig
 
 
-import webbrowser
-from threading import Timer
+    @app.callback(
+        Output('returns-chart', 'figure'),
+        Input('stock-selector', 'value')
+    )
+    def update_returns_chart(selected_stocks):
+        filtered_df = df[df['Ticker'].isin(selected_stocks)]
+        _, stock_returns, _, _ = compute_returns(filtered_df)
+        fig = px.line(
+            stock_returns,
+            x='Date',
+            y='Daily_Return',
+            color='Ticker',
+            title="Daily Returns by Stock",
+            labels={'Daily_Return': 'Daily Return', 'Date': 'Date'}
+        )
+        return fig
 
-def open_browser():
-    webbrowser.open_new("http://127.0.0.1:8050/")
+
+    @app.callback(
+        Output('sharpe-ratio-table', 'children'),
+        Input('stock-selector', 'value')
+    )
+    def update_sharpe_ratios(selected_stocks):
+        filtered_df = df[df['Ticker'].isin(selected_stocks)]
+        _, _, portfolio_sharpe, stock_sharpes = compute_returns(filtered_df)
+        table_header = [
+            html.Thead(html.Tr([html.Th("Ticker"), html.Th("Sharpe Ratio")]))
+        ]
+        table_body = [
+            html.Tr([html.Td("Portfolio"), html.Td(f"{portfolio_sharpe:.2f}")])
+        ]
+        for _, row in stock_sharpes.iterrows():
+            table_body.append(html.Tr([html.Td(row['Ticker']), html.Td(f"{row['Sharpe_Ratio']:.2f}")]))
+        return table_header + [html.Tbody(table_body)]
+
+
+    # Callback in order to update dynamicly the graph
+    @app.callback(
+        Output('dynamic-indicator-graphs', 'children'),
+        Input('stock-selector', 'value')  # La valeur sélectionnée dans la liste déroulante
+    )
+    def update_dynamic_graphs(selected_stocks):
+        if not selected_stocks:
+            return [html.Div("No stocks selected.", style={'textAlign': 'center', 'padding': '20px'})]
+
+        graphs = []
+        for ticker in selected_stocks:
+            stock_data = fetch_and_compute_indicators([ticker])
+
+            if stock_data.empty:
+                graphs.append(html.Div(f"No data available for {ticker}.", style={'textAlign': 'center', 'padding': '10px'}))
+                continue
+
+            # create a graph for each stock
+            fig = px.line(stock_data, x='Date', y='Close', title=f"{ticker} - Statistical Indicators")
+            fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_15'], mode='lines', name='MA 15')
+            fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_30'], mode='lines', name='MA 30')
+            fig.add_scatter(x=stock_data['Date'], y=stock_data['MA_45'], mode='lines', name='MA 45')
+            fig.add_scatter(
+                x=stock_data['Date'], y=stock_data['BB_Upper'],
+                mode='lines', line=dict(width=0), name='Upper Band',
+                showlegend=False
+            )
+            fig.add_scatter(
+                x=stock_data['Date'], y=stock_data['BB_Lower'],
+                mode='lines', line=dict(width=0), name='Lower Band',
+                fill='tonexty', fillcolor='rgba(173,216,230,0.3)',  # Couleur bleu clair
+                showlegend=False
+            )
+
+            graphs.append(
+                dbc.Col([
+                    dcc.Graph(
+                        id=f"{ticker}-indicator-chart",
+                        figure=fig,
+                        config={'displayModeBar': False}
+                    )
+                ], width=6)  # each graph will occup half the line
+            )
+
+        return graphs
+
+    @app.callback(
+    Output('correlation-heatmap', 'figure'),
+    Input('stock-selector', 'value')
+    )
+    def update_correlation_heatmap(selected_stocks):
+        filtered_df = df[df['Ticker'].isin(selected_stocks)]
+        correlation_matrix = compute_correlation_matrix(filtered_df)
+        fig = px.imshow(
+            correlation_matrix,
+            title="Correlation Heatmap",
+            color_continuous_scale=["darkblue", "skyblue"],
+            labels={'color': 'Correlation'},
+            x=correlation_matrix.columns,
+            y=correlation_matrix.columns
+        )
+        fig.update_layout(
+            height=500,  # Adjust height for better display
+            xaxis_title="Ticker",
+            yaxis_title="Ticker",
+            margin=dict(l=40, r=40, t=40, b=40)  # Add padding
+        )
+        return fig
+
+    # Function to open the browser
+    def open_browser():
+        webbrowser.open_new("http://127.0.0.1:8050/")
+
+    # Run the Dash app
+    if __name__ == "__main__":
+        Timer(1, open_browser).start()  # Open the browser after a 1-second delay
+        app.run_server(debug=False, port=8050)
+
+    
+
+def main():
+    # Logique principale ici
+    verbose = False  # Set to True to enable logging, or False to suppress it
+
+    # Exécution unique du backtest
+    backtest = Backtest(
+        initial_date=datetime(2019, 1, 1),
+        final_date=datetime(2020, 1, 1),
+        information_class=FirstTwoMoments,
+        risk_model=StopLoss,
+        name_blockchain='backtest',
+        verbose=verbose
+    )
+
+    backtest.run_backtest()
+
+    block_chain = load_blockchain('backtest')
+    print(str(block_chain))
+    # Check if the blockchain is valid
+    print(block_chain.is_valid())
+
+    # Préparer les données pour l'application Dash
+    df_test = None
+    for block in block_chain.chain:
+        if block.name_backtest == "Genesis Block":  # Ignorer le bloc Genesis
+            continue
+        
+        print(f"Processing block: {block.name_backtest}")
+        
+        try:
+            # Convertir les données en DataFrame
+            df_test = pd.read_csv(StringIO(block.data), delim_whitespace=True)
+            print("Data as DataFrame:")
+            print(df_test.head())
+        except Exception as e:
+            print(f"Error converting block data to DataFrame: {e}")
+        print("-" * 80)
+    
+    return df_test
 
 if __name__ == "__main__":
-    Timer(1, open_browser).start()
-    #app.run_server(debug=False, port=8050)
-    app.run_server(host='0.0.0.0', port=8050, debug=True)
+    # Exécutez la logique principale une seule fois
+    df_test = main()
+
+    # Lancer l'application Dash avec les données générées
+    if df_test is not None:
+        run_app(df_test)
+    else:
+        print("No valid data available to run the Dash app.")
