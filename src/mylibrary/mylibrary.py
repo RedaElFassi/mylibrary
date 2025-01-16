@@ -16,11 +16,6 @@ import os
 import threading
 
 
-
-
-
-
-
 #Here df that we will use is the last dataframe obtained above from the loop
 #where we looped on the block of the blockchains
 
@@ -146,7 +141,16 @@ def run_app(df):
     app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
     # Layout
-    app.layout = dbc.Container([
+    app.layout =  dbc.Container([
+        dbc.Row([
+            dbc.Col(
+                html.H1(
+                    "Dashboard Projet Python Backtest",
+                    className="text-center my-4"  # Classes Bootstrap pour alignement et marges
+                ),
+                width=12
+            )
+        ]),  # Ajout du titre principal
         dbc.Row([
             dbc.Col([
                 dcc.Dropdown(
