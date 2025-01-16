@@ -1,1 +1,4 @@
-from mylibrary import mylibrary
+from mylibrary import compute_pnl, compute_returns
+
+
+
