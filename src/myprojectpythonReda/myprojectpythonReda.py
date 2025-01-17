@@ -414,7 +414,7 @@ def run_app(df):
     # Run the Dash app
     if __name__ == "__main__":
         Timer(1, open_browser).start()  # Open the browser after a 1-second delay
-        app.run_server(debug=True, port=8050)
+        app.run_server(debug=False, port=8050)
 
 
     
