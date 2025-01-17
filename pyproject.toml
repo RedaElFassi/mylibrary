@@ -21,4 +21,3 @@ build-backend = "poetry.core.masonry.api"
 version_variable = "pyproject.toml:version"
 version_toml = ["pyproject.toml:tool.poetry.version"]
 branch = "master"
-
